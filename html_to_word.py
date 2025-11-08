@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Optional, Union, Tuple
 import re
-import copy
 from bs4 import BeautifulSoup, NavigableString, Tag
 from docx import Document
 from docx.shared import Pt, Inches
@@ -37,11 +36,11 @@ def html_to_word(
     # 设置文档样式（使用提取的样式）
     _setup_styles(doc, font_size_pt, line_height)
 
-    # 添加姓名和联系信息
-    _process_header(doc, soup, font_size_pt)
+    # 添加姓名和联系信息（标题保持原格式，不受 CSS 影响）
+    _process_header(doc, soup)
 
     # 添加间隔
-    doc.add_paragraph().paragraph_format.space_after = Pt(6)
+    # doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
     # 处理所有章节
     _process_sections(doc, soup, font_size_pt, line_height)
@@ -110,7 +109,7 @@ def _extract_css_styles(soup: BeautifulSoup) -> Tuple[float, float]:
                 re.IGNORECASE
             )
             if line_height_match:
-                line_height = float(line_height_match.group(1))
+                line_height = float(line_height_match.group(1))/1.2
 
     return font_size_pt, line_height
 
@@ -131,13 +130,12 @@ def _setup_styles(doc: Document, font_size_pt: float, line_height: float):
     style.paragraph_format.line_spacing = line_height
 
 
-def _process_header(doc: Document, soup: BeautifulSoup, base_font_size: float):
-    """处理姓名和联系信息
+def _process_header(doc: Document, soup: BeautifulSoup):
+    """处理姓名和联系信息（标题保持原格式，不受 CSS 影响）
 
     Args:
         doc: Document 对象
         soup: BeautifulSoup 对象
-        base_font_size: 基础字号（磅）
     """
     # 添加姓名
     name_header = soup.find('div', class_='name-header')
@@ -145,8 +143,8 @@ def _process_header(doc: Document, soup: BeautifulSoup, base_font_size: float):
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = para.add_run(name_header.get_text(strip=True))
-        # 姓名字号使用基础字号的 2.38 倍（约 25pt，当基础为 10.5pt 时）
-        run.font.size = Pt(base_font_size * 2.38)
+        # 标题保持原格式：固定 25pt
+        run.font.size = Pt(25)
         run.bold = True
         para.paragraph_format.space_after = Pt(6)
 
@@ -156,8 +154,8 @@ def _process_header(doc: Document, soup: BeautifulSoup, base_font_size: float):
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = para.add_run(contact_div.get_text(strip=True))
-        # 联系信息字号使用基础字号的 1.14 倍（约 12pt，当基础为 10.5pt 时）
-        run.font.size = Pt(base_font_size * 1.14)
+        # 标题保持原格式：固定 12pt
+        run.font.size = Pt(12)
         para.paragraph_format.space_after = Pt(12)
 
 
@@ -173,31 +171,26 @@ def _process_sections(doc: Document, soup: BeautifulSoup, font_size_pt: float, l
     sections = soup.find_all('div', class_='section-title')
 
     for idx, section in enumerate(sections):
-        # 添加章节标题
-        _add_section_title(doc, section.get_text(strip=True), font_size_pt)
+        # 添加章节标题（标题保持原格式，不受 CSS 影响）
+        _add_section_title(doc, section.get_text(strip=True))
 
-        # 处理该章节的列表
+        # 处理该章节的列表（正文部分使用 CSS 提取的字号和行距）
         next_ul = section.find_next_sibling('ul', class_='ul-section')
         if next_ul:
             _process_list(doc, next_ul, font_size_pt, line_height)
 
-        # 章节间距（最后一个除外）
-        if idx < len(sections) - 1:
-            doc.add_paragraph().paragraph_format.space_after = Pt(8)
 
-
-def _add_section_title(doc: Document, title: str, font_size_pt: float):
-    """添加章节标题（加粗 + 底部边框）
+def _add_section_title(doc: Document, title: str):
+    """添加章节标题（加粗 + 底部边框，标题保持原格式，不受 CSS 影响）
 
     Args:
         doc: Document 对象
         title: 标题文本
-        font_size_pt: 字号（磅）
     """
     para = doc.add_paragraph()
     run = para.add_run(title)
-    # 章节标题字号使用基础字号的 1.24 倍（约 13pt，当基础为 10.5pt 时）
-    run.font.size = Pt(font_size_pt * 1.24)
+    # 标题保持原格式：固定 13pt
+    run.font.size = Pt(13)
     run.bold = True
 
     # 添加底部边框
@@ -243,37 +236,6 @@ def _process_list(doc: Document, ul_element, font_size_pt: float, line_height: f
         # 添加列表项，支持部分加粗
         _add_list_item_with_formatting(
             doc, li, has_dot, right_text, font_size_pt, line_height)
-
-
-def _add_list_item(doc: Document, text: str, is_bold: bool, is_italic: bool,
-                   has_dot: bool, right_text: str):
-    """添加单个列表项（保留用于兼容性）"""
-    para = doc.add_paragraph()
-
-    # 添加圆点（如果需要）
-    if has_dot:
-        para.paragraph_format.left_indent = Inches(0.3)
-        para.add_run('• ').font.size = Pt(11)
-
-    # 添加主文本
-    run = para.add_run(text)
-    run.font.size = Pt(11)
-    run.bold = is_bold
-    run.italic = is_italic
-
-    # 添加右对齐文本（如果有）
-    if right_text:
-        right_run = para.add_run('\t' + right_text)
-        right_run.font.size = Pt(11)
-        right_run.bold = is_bold
-        right_run.italic = is_italic
-        para.paragraph_format.tab_stops.add_tab_stop(
-            Inches(6.0), WD_ALIGN_PARAGRAPH.RIGHT)
-
-    # 设置紧凑的行距
-    para.paragraph_format.space_after = Pt(1)
-    para.paragraph_format.space_before = Pt(1)
-    para.paragraph_format.line_spacing = 1.15
 
 
 def _add_list_item_with_formatting(doc: Document, li_element, has_dot: bool, right_text: str,
