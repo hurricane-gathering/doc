@@ -33,6 +33,9 @@ def html_to_word(
     # 从 HTML 中提取字号和行距
     font_size_pt, line_height = _extract_css_styles(soup)
 
+    # 设置页边距（调小一些）
+    _setup_margins(doc)
+
     # 设置文档样式（使用提取的样式）
     _setup_styles(doc, font_size_pt, line_height)
 
@@ -109,9 +112,23 @@ def _extract_css_styles(soup: BeautifulSoup) -> Tuple[float, float]:
                 re.IGNORECASE
             )
             if line_height_match:
-                line_height = float(line_height_match.group(1))/1.2
+                line_height = float(line_height_match.group(1))/1.5
 
     return font_size_pt, line_height
+
+
+def _setup_margins(doc: Document):
+    """设置文档页边距（调小一些）
+
+    Args:
+        doc: Document 对象
+    """
+    section = doc.sections[0]
+    # 设置较小的页边距（默认是 1 英寸，这里改为 0.5 英寸）
+    section.top_margin = Inches(0.5)
+    section.bottom_margin = Inches(0.5)
+    section.left_margin = Inches(0.5)
+    section.right_margin = Inches(0.5)
 
 
 def _setup_styles(doc: Document, font_size_pt: float, line_height: float):
@@ -144,19 +161,22 @@ def _process_header(doc: Document, soup: BeautifulSoup):
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = para.add_run(name_header.get_text(strip=True))
         # 标题保持原格式：固定 25pt
-        run.font.size = Pt(25)
+        run.font.size = Pt(20)
         run.bold = True
-        para.paragraph_format.space_after = Pt(6)
+        para.paragraph_format.space_after = Pt(3)
 
-    # 添加联系信息
+    # 添加联系信息（二级标题，公司名称行，固定字号和行距，不受CSS影响）
     contact_div = soup.find('div', class_='contact-info')
     if contact_div:
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = para.add_run(contact_div.get_text(strip=True))
-        # 标题保持原格式：固定 12pt
+        # 二级标题保持原格式：固定 12pt，固定行距 1.0，不受CSS影响
         run.font.size = Pt(12)
-        para.paragraph_format.space_after = Pt(12)
+        run.font.family = 'Times New Roman'
+        para.paragraph_format.space_after = Pt(3)
+        para.paragraph_format.line_spacing = 1.0  # 固定行距，不受CSS影响
+        para.paragraph_format.space_before = Pt(0)  # 确保没有上间距
 
 
 def _process_sections(doc: Document, soup: BeautifulSoup, font_size_pt: float, line_height: float):
@@ -181,7 +201,7 @@ def _process_sections(doc: Document, soup: BeautifulSoup, font_size_pt: float, l
 
 
 def _add_section_title(doc: Document, title: str):
-    """添加章节标题（加粗 + 底部边框，标题保持原格式，不受 CSS 影响）
+    """添加章节标题（加粗 + 底部边框，一级标题保持原格式，不受 CSS 影响）
 
     Args:
         doc: Document 对象
@@ -189,9 +209,12 @@ def _add_section_title(doc: Document, title: str):
     """
     para = doc.add_paragraph()
     run = para.add_run(title)
-    # 标题保持原格式：固定 13pt
+    # 一级标题保持原格式：固定 13pt，固定行距 1.0
     run.font.size = Pt(13)
     run.bold = True
+    para.paragraph_format.line_spacing = 1.0  # 固定行距
+    para.paragraph_format.space_after = Pt(0)  # 横线下不要有空白
+    para.paragraph_format.space_before = Pt(0)  # 确保没有上间距
 
     # 添加底部边框
     p = para._element
@@ -204,10 +227,6 @@ def _add_section_title(doc: Document, title: str):
     bottom.set(qn('w:color'), '000000')
     pBdr.append(bottom)
     pPr.append(pBdr)
-
-    # 设置间距
-    para.paragraph_format.space_after = Pt(6)
-    para.paragraph_format.space_before = Pt(6)
 
 
 def _process_list(doc: Document, ul_element, font_size_pt: float, line_height: float):
@@ -252,9 +271,12 @@ def _add_list_item_with_formatting(doc: Document, li_element, has_dot: bool, rig
     """
     para = doc.add_paragraph()
 
+    # 确保列表项前没有缩进空白
+    para.paragraph_format.left_indent = Inches(0)
+    para.paragraph_format.first_line_indent = Inches(0)
+
     # 添加圆点（如果需要）
     if has_dot:
-        para.paragraph_format.left_indent = Inches(0.3)
         para.add_run('• ').font.size = Pt(font_size_pt)
 
     # 遍历 li 元素的所有子节点，分别处理加粗和非加粗部分
@@ -304,12 +326,21 @@ def _add_list_item_with_formatting(doc: Document, li_element, has_dot: bool, rig
     if right_text:
         right_run = para.add_run('\t' + right_text)
         right_run.font.size = Pt(font_size_pt)
+        # 根据页面宽度和边距动态计算制表位位置
+        section = doc.sections[0]
+        page_width = section.page_width
+        left_margin = section.left_margin
+        right_margin = section.right_margin
+        # 可用宽度 = 页面宽度 - 左边距 - 右边距
+        available_width = page_width - left_margin - right_margin
+        # 制表位设置为接近可用宽度，留一点边距（0.2 英寸）
+        tab_position = available_width - Inches(0)
         para.paragraph_format.tab_stops.add_tab_stop(
-            Inches(6.0), WD_ALIGN_PARAGRAPH.RIGHT)
+            tab_position, WD_ALIGN_PARAGRAPH.RIGHT)
 
     # 设置行距（使用从 CSS 提取的值）
     para.paragraph_format.space_after = Pt(1)
-    para.paragraph_format.space_before = Pt(1)
+    para.paragraph_format.space_before = Pt(1)  # 去除横线后的空白
     para.paragraph_format.line_spacing = line_height
 
 
