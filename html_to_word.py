@@ -277,7 +277,7 @@ def _add_list_item_with_formatting(doc: Document, li_element, has_dot: bool, rig
 
     # 添加圆点（如果需要）
     if has_dot:
-        para.add_run('• ').font.size = Pt(font_size_pt)
+        para.add_run('•     ').font.size = Pt(font_size_pt)
 
     # 遍历 li 元素的所有子节点，分别处理加粗和非加粗部分
     for element in li_element.children:
