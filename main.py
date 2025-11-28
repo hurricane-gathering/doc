@@ -1,13 +1,14 @@
 """
 FastAPI 应用：HTML 转 Word 文档服务
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 import tempfile
 import os
 from html_to_word import html_to_word
+from word_to_json import parse_docx_to_json
 
 app = FastAPI(
     title="HTML to Word Converter",
@@ -80,6 +81,31 @@ async def html2word(html_content: HTMLContent):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"服务器错误: {str(e)}")
+
+
+@app.post("/word2json")
+async def word2json(file: UploadFile = File(...)):
+    """将 Word 文档转换为 JSON 格式"""
+    # 验证文件类型
+    if not file.filename.endswith('.docx'):
+        raise HTTPException(status_code=400, detail="文件格式错误，仅支持 .docx 文件")
+
+    # 创建临时文件保存上传的内容
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
+        content = await file.read()
+        tmp_file.write(content)
+        tmp_path = tmp_file.name
+
+    try:
+        # 解析 Word 文档
+        result = parse_docx_to_json(tmp_path)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"解析失败: {str(e)}")
+    finally:
+        # 清理临时文件
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 if __name__ == "__main__":
